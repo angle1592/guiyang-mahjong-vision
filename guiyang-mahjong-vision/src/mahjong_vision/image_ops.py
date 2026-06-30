@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class ProcessedImage:
     gray: np.ndarray
     edges: np.ndarray
@@ -14,14 +14,18 @@ def _normalize_uint8(image: np.ndarray) -> np.ndarray:
     if image.dtype.kind == "f":
         if not np.isfinite(image).all():
             raise ValueError("floating-point image values must be finite")
-        if image.min() >= 0 and image.max() <= 1:
-            image = image * 255
+        image = np.clip(image, 0, 1) * 255
     elif image.dtype.kind not in "iu":
         raise ValueError("image dtype must be an integer or floating-point type")
     return np.clip(image, 0, 255).astype(np.uint8)
 
 
 def preprocess(image: np.ndarray, size: tuple[int, int]) -> ProcessedImage:
+    """Preprocess a gray, BGR, or BGRA image to ``size=(width, height)``.
+
+    Color arrays use BGR/BGRA ordering. Finite floats are normalized-domain
+    values clipped to [0, 1] and scaled to uint8; integers clip to [0, 255].
+    """
     if (
         not isinstance(size, tuple)
         or len(size) != 2

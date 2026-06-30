@@ -97,6 +97,15 @@ def test_preprocess_is_deterministic() -> None:
     assert np.array_equal(first.edges, second.edges)
 
 
+def test_processed_image_equality_uses_identity() -> None:
+    gray = np.zeros((2, 2), dtype=np.uint8)
+    first = ProcessedImage(gray=gray, edges=gray.copy())
+    second = ProcessedImage(gray=gray.copy(), edges=gray.copy())
+
+    assert first == first
+    assert first != second
+
+
 @pytest.mark.parametrize("channels", [None, 3])
 def test_preprocess_accepts_float_grayscale_and_bgr(
     channels: int | None,
@@ -131,12 +140,12 @@ def test_preprocess_clips_wide_integers_before_processing() -> None:
     assert np.array_equal(actual.edges, expected.edges)
 
 
-def test_preprocess_clips_out_of_range_floats_before_processing() -> None:
-    image = np.array([[-100.5, 0.0], [255.0, 10_000.25]], dtype=np.float64)
-    clipped = np.clip(image, 0, 255).astype(np.uint8)
+def test_preprocess_clips_floats_to_normalized_domain_before_scaling() -> None:
+    image = np.array([[-1e-7, 0.0], [0.5, 1.0001]], dtype=np.float64)
+    normalized = np.array([[0, 0], [127, 255]], dtype=np.uint8)
 
     actual = preprocess(image, (2, 2))
-    expected = preprocess(clipped, (2, 2))
+    expected = preprocess(normalized, (2, 2))
 
     assert np.array_equal(actual.gray, expected.gray)
     assert np.array_equal(actual.edges, expected.edges)
