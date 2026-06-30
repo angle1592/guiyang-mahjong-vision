@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guiyang-mahjong-vision"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "mss>=10,<11",
+    "numpy>=2,<3",
+    "opencv-python>=4.10,<5",
+    "pywin32>=308",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[project.scripts]
+mahjong-vision = "mahjong_vision.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
