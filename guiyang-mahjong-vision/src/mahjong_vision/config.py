@@ -53,31 +53,91 @@ class AdvisorConfig:
 
 @dataclass(frozen=True)
 class AppConfig:
-    title: str
+    window_title: str
     hand: HandConfig
     matching: MatchingConfig
     runtime: RuntimeConfig
     advisor: AdvisorConfig
 
 
-def load_config(path: str | Path) -> AppConfig:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    hand = HandConfig(**raw["hand"])
-    matching = MatchingConfig(**raw["matching"])
-    runtime = RuntimeConfig(**raw["runtime"])
-    advisor = AdvisorConfig(**raw["advisor"])
+def _object(value: object, name: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a JSON object")
+    return value
 
-    if hand.count != 14:
+
+def _required(data: dict[str, object], key: str, section: str) -> object:
+    try:
+        return data[key]
+    except KeyError as error:
+        raise ValueError(f"{section}.{key} is required") from error
+
+
+def _integer(data: dict[str, object], key: str, section: str) -> int:
+    value = _required(data, key, section)
+    if type(value) is not int:
+        raise ValueError(f"{section}.{key} must be an integer")
+    return value
+
+
+def _number(data: dict[str, object], key: str, section: str) -> int | float:
+    value = _required(data, key, section)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{section}.{key} must be numeric")
+    return value
+
+
+def load_config(path: str | Path) -> AppConfig:
+    raw = _object(
+        json.loads(Path(path).read_text(encoding="utf-8")),
+        "configuration",
+    )
+    window_title = _required(raw, "window_title", "configuration")
+    if not isinstance(window_title, str) or not window_title.strip():
+        raise ValueError("configuration.window_title must be a nonempty string")
+
+    hand_raw = _object(_required(raw, "hand", "configuration"), "hand")
+    hand_values = {
+        key: _integer(hand_raw, key, "hand")
+        for key in ("x", "y", "slot_width", "slot_height", "stride", "count")
+    }
+    if hand_values["count"] != 14:
         raise ValueError("hand count must be exactly 14")
-    if min(hand.x, hand.y, hand.slot_width, hand.slot_height, hand.stride) <= 0:
-        raise ValueError("hand geometry must be positive")
-    if not 0 <= matching.threshold <= 1:
-        raise ValueError("matching threshold must be between 0 and 1")
-    if runtime.fps <= 0 or runtime.stable_frames <= 0:
+    if hand_values["x"] < 0 or hand_values["y"] < 0:
+        raise ValueError("hand x and y must be non-negative")
+    if any(
+        hand_values[key] <= 0 for key in ("slot_width", "slot_height", "stride")
+    ):
+        raise ValueError("hand slot geometry must be positive")
+    hand = HandConfig(**hand_values)
+
+    matching_raw = _object(
+        _required(raw, "matching", "configuration"), "matching"
+    )
+    threshold = _number(matching_raw, "threshold", "matching")
+    min_margin = _number(matching_raw, "min_margin", "matching")
+    if not 0 <= threshold <= 1 or not 0 <= min_margin <= 1:
+        raise ValueError("matching threshold and min_margin must be between 0 and 1")
+    matching = MatchingConfig(threshold=threshold, min_margin=min_margin)
+
+    runtime_raw = _object(_required(raw, "runtime", "configuration"), "runtime")
+    fps = _integer(runtime_raw, "fps", "runtime")
+    stable_frames = _integer(runtime_raw, "stable_frames", "runtime")
+    if fps <= 0 or stable_frames <= 0:
         raise ValueError("runtime fps and stable_frames must be positive")
+    runtime = RuntimeConfig(fps=fps, stable_frames=stable_frames)
+
+    advisor_raw = _object(_required(raw, "advisor", "configuration"), "advisor")
+    advisor = AdvisorConfig(
+        one_bamboo_weight=_number(
+            advisor_raw, "one_bamboo_weight", "advisor"
+        ),
+        eight_dot_weight=_number(advisor_raw, "eight_dot_weight", "advisor"),
+        pair_weight=_number(advisor_raw, "pair_weight", "advisor"),
+    )
 
     return AppConfig(
-        title=raw["title"],
+        window_title=window_title,
         hand=hand,
         matching=matching,
         runtime=runtime,
