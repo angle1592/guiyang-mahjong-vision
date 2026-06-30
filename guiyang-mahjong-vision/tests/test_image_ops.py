@@ -97,6 +97,56 @@ def test_preprocess_is_deterministic() -> None:
     assert np.array_equal(first.edges, second.edges)
 
 
+@pytest.mark.parametrize("channels", [None, 3])
+def test_preprocess_accepts_float_grayscale_and_bgr(
+    channels: int | None,
+) -> None:
+    gray = np.linspace(0.0, 1.0, 24, dtype=np.float64).reshape(4, 6)
+    image = gray if channels is None else np.repeat(gray[:, :, None], channels, axis=2)
+
+    result = preprocess(image, (6, 4))
+
+    assert result.gray.dtype == np.uint8
+    assert result.edges.dtype == np.uint8
+    assert result.gray.shape == (4, 6)
+
+
+def test_preprocess_clips_wide_integers_before_processing() -> None:
+    image = np.array([[-100, 0], [255, 10_000]], dtype=np.int32)
+    clipped = np.array([[0, 0], [255, 255]], dtype=np.uint8)
+
+    actual = preprocess(image, (2, 2))
+    expected = preprocess(clipped, (2, 2))
+
+    assert np.array_equal(actual.gray, expected.gray)
+    assert np.array_equal(actual.edges, expected.edges)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        np.zeros((2, 2), dtype=np.bool_),
+        np.full((2, 2), "1", dtype="<U1"),
+        np.full((2, 2), object(), dtype=object),
+        np.zeros((2, 2), dtype=np.complex64),
+        np.zeros((2, 2), dtype="datetime64[D]"),
+        np.zeros((2, 2), dtype="timedelta64[D]"),
+    ],
+)
+def test_preprocess_rejects_unsupported_dtypes(image: np.ndarray) -> None:
+    with pytest.raises(ValueError):
+        preprocess(image, (2, 2))
+
+
+@pytest.mark.parametrize("invalid_value", [np.nan, np.inf, -np.inf])
+def test_preprocess_rejects_non_finite_floats(invalid_value: float) -> None:
+    image = np.zeros((2, 2, 3), dtype=np.float32)
+    image[0, 0, 0] = invalid_value
+
+    with pytest.raises(ValueError):
+        preprocess(image, (2, 2))
+
+
 @pytest.mark.parametrize(
     "image",
     [

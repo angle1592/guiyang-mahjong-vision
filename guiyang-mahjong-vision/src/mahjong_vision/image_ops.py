@@ -10,6 +10,17 @@ class ProcessedImage:
     edges: np.ndarray
 
 
+def _normalize_uint8(image: np.ndarray) -> np.ndarray:
+    if image.dtype.kind == "f":
+        if not np.isfinite(image).all():
+            raise ValueError("floating-point image values must be finite")
+        if image.min() >= 0 and image.max() <= 1:
+            image = image * 255
+    elif image.dtype.kind not in "iu":
+        raise ValueError("image dtype must be an integer or floating-point type")
+    return np.clip(image, 0, 255).astype(np.uint8)
+
+
 def preprocess(image: np.ndarray, size: tuple[int, int]) -> ProcessedImage:
     if (
         not isinstance(size, tuple)
@@ -20,17 +31,16 @@ def preprocess(image: np.ndarray, size: tuple[int, int]) -> ProcessedImage:
     if not isinstance(image, np.ndarray) or image.size == 0:
         raise ValueError("image must be a non-empty numpy array")
 
-    if image.ndim == 2:
-        gray = image
-    elif image.ndim == 3 and image.shape[2] == 3:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    elif image.ndim == 3 and image.shape[2] == 4:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    normalized = _normalize_uint8(image)
+    if normalized.ndim == 2:
+        gray = normalized
+    elif normalized.ndim == 3 and normalized.shape[2] == 3:
+        gray = cv2.cvtColor(normalized, cv2.COLOR_BGR2GRAY)
+    elif normalized.ndim == 3 and normalized.shape[2] == 4:
+        gray = cv2.cvtColor(normalized, cv2.COLOR_BGRA2GRAY)
     else:
         raise ValueError("image must be grayscale, BGR, or BGRA")
 
-    if gray.dtype != np.uint8:
-        gray = np.clip(gray, 0, 255).astype(np.uint8)
     resized = cv2.resize(gray, size, interpolation=cv2.INTER_AREA)
     equalized = cv2.equalizeHist(resized)
     edges = cv2.Canny(equalized, 60, 140)
