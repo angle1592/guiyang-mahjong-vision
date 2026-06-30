@@ -103,17 +103,37 @@ def test_preprocess_accepts_float_grayscale_and_bgr(
 ) -> None:
     gray = np.linspace(0.0, 1.0, 24, dtype=np.float64).reshape(4, 6)
     image = gray if channels is None else np.repeat(gray[:, :, None], channels, axis=2)
+    uint8_gray = (gray * 255).astype(np.uint8)
+    uint8_image = (
+        uint8_gray
+        if channels is None
+        else np.repeat(uint8_gray[:, :, None], channels, axis=2)
+    )
 
     result = preprocess(image, (6, 4))
+    expected = preprocess(uint8_image, (6, 4))
 
     assert result.gray.dtype == np.uint8
     assert result.edges.dtype == np.uint8
     assert result.gray.shape == (4, 6)
+    assert np.array_equal(result.gray, expected.gray)
+    assert np.array_equal(result.edges, expected.edges)
 
 
 def test_preprocess_clips_wide_integers_before_processing() -> None:
     image = np.array([[-100, 0], [255, 10_000]], dtype=np.int32)
     clipped = np.array([[0, 0], [255, 255]], dtype=np.uint8)
+
+    actual = preprocess(image, (2, 2))
+    expected = preprocess(clipped, (2, 2))
+
+    assert np.array_equal(actual.gray, expected.gray)
+    assert np.array_equal(actual.edges, expected.edges)
+
+
+def test_preprocess_clips_out_of_range_floats_before_processing() -> None:
+    image = np.array([[-100.5, 0.0], [255.0, 10_000.25]], dtype=np.float64)
+    clipped = np.clip(image, 0, 255).astype(np.uint8)
 
     actual = preprocess(image, (2, 2))
     expected = preprocess(clipped, (2, 2))
