@@ -10,6 +10,8 @@ def test_crop_slots_uses_fixed_stride_and_returns_copies():
     frame = np.zeros((5, 9, 3), dtype=np.uint8)
     frame[1:4, 1:3] = 10
     frame[1:4, 4:6] = 20
+    expected_first = frame[1:4, 1:3].copy()
+    expected_second = frame[1:4, 4:6].copy()
     hand = HandConfig(
         x=1,
         y=1,
@@ -23,10 +25,11 @@ def test_crop_slots_uses_fixed_stride_and_returns_copies():
 
     assert len(slots) == 2
     assert slots[0].shape == (3, 2, 3)
-    assert slots[0].mean() == 10
-    assert slots[1].mean() == 20
+    assert slots[1].shape == (3, 2, 3)
+    np.testing.assert_array_equal(slots[0], expected_first)
+    np.testing.assert_array_equal(slots[1], expected_second)
     frame[1:4, 1:3] = 99
-    assert slots[0].mean() == 10
+    np.testing.assert_array_equal(slots[0], expected_first)
 
 
 def test_crop_slots_rejects_slot_outside_frame():
