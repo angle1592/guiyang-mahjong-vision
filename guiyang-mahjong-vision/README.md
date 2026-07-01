@@ -47,3 +47,21 @@ uv run mahjong-vision
 ```powershell
 uv run python -m pytest -q --basetemp .pytest-local
 ```
+
+## 回放数据格式
+
+`samples/manifest.json`：
+
+```json
+[
+  {
+    "image": "hand-001.png",
+    "labels": [
+      "5m", "6m", "6m", "9m", "2s", "2s", "3s",
+      "8s", "1p", "1p", "1p", "6p", "6p", "8s"
+    ]
+  }
+]
+```
+
+加入标注截图后运行 `uv run python -m pytest tests/test_replay.py -v`，测试会检查单牌准确率与第 95 百分位延迟。
