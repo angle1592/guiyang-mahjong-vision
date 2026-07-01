@@ -1,9 +1,42 @@
 import numpy as np
 import pytest
+import pywintypes
+from mss.exception import ScreenShotError
 
 from mahjong_vision import capture
 from mahjong_vision.capture import WindowCapture, WindowUnavailable, crop_slots
 from mahjong_vision.config import HandConfig
+
+
+class FakeScreen:
+    def __init__(self, shot=None, grab_error=None):
+        self.shot = (
+            np.full((6, 8, 4), 7, dtype=np.uint8)
+            if shot is None
+            else shot
+        )
+        self.grab_error = grab_error
+        self.monitor = None
+        self.close_calls = 0
+
+    def grab(self, monitor):
+        self.monitor = monitor
+        if self.grab_error is not None:
+            raise self.grab_error
+        return self.shot
+
+    def close(self):
+        self.close_calls += 1
+
+
+def patch_available_window(monkeypatch):
+    monkeypatch.setattr(capture.win32gui, "FindWindow", lambda _class, _title: 42)
+    monkeypatch.setattr(capture.win32gui, "IsIconic", lambda _handle: False)
+    monkeypatch.setattr(
+        capture.win32gui,
+        "GetWindowRect",
+        lambda _handle: (100, 200, 108, 206),
+    )
 
 
 def test_crop_slots_uses_fixed_stride_and_returns_copies():
@@ -48,23 +81,9 @@ def test_crop_slots_rejects_slot_outside_frame():
 
 
 def test_window_capture_grabs_the_wechat_window(monkeypatch):
-    class FakeScreen:
-        def __init__(self):
-            self.monitor = None
-
-        def grab(self, monitor):
-            self.monitor = monitor
-            return np.full((6, 8, 4), 7, dtype=np.uint8)
-
     screen = FakeScreen()
-    monkeypatch.setattr(capture.mss, "mss", lambda: screen)
-    monkeypatch.setattr(capture.win32gui, "FindWindow", lambda _class, _title: 42)
-    monkeypatch.setattr(capture.win32gui, "IsIconic", lambda _handle: False)
-    monkeypatch.setattr(
-        capture.win32gui,
-        "GetWindowRect",
-        lambda _handle: (100, 200, 108, 206),
-    )
+    monkeypatch.setattr(capture.mss, "MSS", lambda: screen)
+    patch_available_window(monkeypatch)
 
     frame = WindowCapture("微信").capture()
 
@@ -78,6 +97,18 @@ def test_window_capture_grabs_the_wechat_window(monkeypatch):
     assert frame.mean() == 7
 
 
+def test_window_capture_context_closes_screen_once(monkeypatch):
+    screen = FakeScreen()
+    monkeypatch.setattr(capture.mss, "MSS", lambda: screen)
+
+    with WindowCapture("微信") as window_capture:
+        assert window_capture.title == "微信"
+
+    assert screen.close_calls == 1
+    window_capture.close()
+    assert screen.close_calls == 1
+
+
 @pytest.mark.parametrize(
     ("handle", "iconic"),
     [(0, False), (42, True)],
@@ -87,7 +118,7 @@ def test_window_capture_rejects_missing_or_minimized_window(
     handle,
     iconic,
 ):
-    monkeypatch.setattr(capture.mss, "mss", lambda: object())
+    monkeypatch.setattr(capture.mss, "MSS", FakeScreen)
     monkeypatch.setattr(
         capture.win32gui,
         "FindWindow",
@@ -100,7 +131,7 @@ def test_window_capture_rejects_missing_or_minimized_window(
 
 
 def test_window_capture_rejects_invalid_window_bounds(monkeypatch):
-    monkeypatch.setattr(capture.mss, "mss", lambda: object())
+    monkeypatch.setattr(capture.mss, "MSS", FakeScreen)
     monkeypatch.setattr(capture.win32gui, "FindWindow", lambda _class, _title: 42)
     monkeypatch.setattr(capture.win32gui, "IsIconic", lambda _handle: False)
     monkeypatch.setattr(
@@ -111,3 +142,50 @@ def test_window_capture_rejects_invalid_window_bounds(monkeypatch):
 
     with pytest.raises(WindowUnavailable):
         WindowCapture("微信").capture()
+
+
+def test_window_capture_converts_window_api_race(monkeypatch):
+    error = pywintypes.error(1400, "GetWindowRect", "Invalid window handle")
+    monkeypatch.setattr(capture.mss, "MSS", FakeScreen)
+    monkeypatch.setattr(capture.win32gui, "FindWindow", lambda _class, _title: 42)
+    monkeypatch.setattr(capture.win32gui, "IsIconic", lambda _handle: False)
+
+    def missing_window(_handle):
+        raise error
+
+    monkeypatch.setattr(capture.win32gui, "GetWindowRect", missing_window)
+
+    with pytest.raises(WindowUnavailable) as caught:
+        WindowCapture("微信").capture()
+
+    assert caught.value.__cause__ is error
+
+
+def test_window_capture_converts_screenshot_failure(monkeypatch):
+    error = ScreenShotError("grab failed")
+    monkeypatch.setattr(
+        capture.mss,
+        "MSS",
+        lambda: FakeScreen(grab_error=error),
+    )
+    patch_available_window(monkeypatch)
+
+    with pytest.raises(WindowUnavailable) as caught:
+        WindowCapture("微信").capture()
+
+    assert caught.value.__cause__ is error
+
+
+def test_window_capture_does_not_hide_programming_errors(monkeypatch):
+    error = TypeError("unexpected grab result")
+    monkeypatch.setattr(
+        capture.mss,
+        "MSS",
+        lambda: FakeScreen(grab_error=error),
+    )
+    patch_available_window(monkeypatch)
+
+    with pytest.raises(TypeError) as caught:
+        WindowCapture("微信").capture()
+
+    assert caught.value is error

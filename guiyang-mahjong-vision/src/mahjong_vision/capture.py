@@ -2,7 +2,9 @@ from dataclasses import dataclass
 
 import mss
 import numpy as np
+import pywintypes
 import win32gui
+from mss.exception import ScreenShotError
 
 from mahjong_vision.config import HandConfig
 
@@ -36,25 +38,47 @@ class WindowCapture:
     title: str
 
     def __post_init__(self) -> None:
-        self._screen = mss.mss()
+        self._screen = mss.MSS()
+
+    def close(self) -> None:
+        if self._screen is not None:
+            screen = self._screen
+            self._screen = None
+            screen.close()
+
+    def __enter__(self) -> "WindowCapture":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
 
     def capture(self) -> np.ndarray:
-        handle = win32gui.FindWindow(None, self.title)
-        if not handle or win32gui.IsIconic(handle):
-            raise WindowUnavailable(f"window is unavailable: {self.title}")
+        try:
+            handle = win32gui.FindWindow(None, self.title)
+            if not handle or win32gui.IsIconic(handle):
+                raise WindowUnavailable(f"window is unavailable: {self.title}")
+            left, top, right, bottom = win32gui.GetWindowRect(handle)
+        except pywintypes.error as error:
+            raise WindowUnavailable(
+                f"window is unavailable: {self.title}"
+            ) from error
 
-        left, top, right, bottom = win32gui.GetWindowRect(handle)
         width = right - left
         height = bottom - top
         if width <= 0 or height <= 0:
             raise WindowUnavailable(f"window has invalid bounds: {self.title}")
 
-        shot = self._screen.grab(
-            {
-                "left": left,
-                "top": top,
-                "width": width,
-                "height": height,
-            }
-        )
+        try:
+            shot = self._screen.grab(
+                {
+                    "left": left,
+                    "top": top,
+                    "width": width,
+                    "height": height,
+                }
+            )
+        except ScreenShotError as error:
+            raise WindowUnavailable(
+                f"could not capture window: {self.title}"
+            ) from error
         return np.asarray(shot)
