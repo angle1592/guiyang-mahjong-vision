@@ -38,6 +38,7 @@ def test_load_config_builds_fourteen_hand_slots() -> None:
     assert len(slots) == 14
     assert slots[-1].x == config.hand.x + 13 * config.hand.stride
     assert config.visible.to_counts() == [0] * 27
+    assert not config.visible_regions.has_regions()
 
 
 def test_load_config_rejects_non_fourteen_tile_hand(tmp_path: Path) -> None:
@@ -87,15 +88,45 @@ def test_load_config_accepts_visible_tile_sources(tmp_path: Path) -> None:
     assert sum(counts) == 7
 
 
-def test_load_config_defaults_missing_visible_section(tmp_path: Path) -> None:
+def test_load_config_accepts_visible_region_sources(tmp_path: Path) -> None:
+    region = {
+        "x": 10,
+        "y": 20,
+        "slot_width": 30,
+        "slot_height": 40,
+        "stride": 35,
+        "count": 2,
+    }
+
+    config = load_config(
+        write_config(
+            tmp_path,
+            {
+                ("visible_regions", "discards"): [region],
+                ("visible_regions", "melds"): [{**region, "count": 3}],
+                ("visible_regions", "revealed"): [{**region, "count": 1}],
+            },
+        )
+    )
+
+    assert config.visible_regions.has_regions()
+    assert len(config.visible_regions.discards) == 1
+    assert config.visible_regions.discards[0].slot_rects()[1].x == 45
+    assert config.visible_regions.melds[0].count == 3
+    assert config.visible_regions.revealed[0].count == 1
+
+
+def test_load_config_defaults_missing_visible_sections(tmp_path: Path) -> None:
     raw_config = json.loads((PROJECT_ROOT / "config.json").read_text(encoding="utf-8"))
     raw_config.pop("visible", None)
+    raw_config.pop("visible_regions", None)
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(raw_config), encoding="utf-8")
 
     config = load_config(config_path)
 
     assert config.visible.to_counts() == [0] * 27
+    assert not config.visible_regions.has_regions()
 
 
 def test_load_config_rejects_more_than_four_visible_copies(tmp_path: Path) -> None:
@@ -147,6 +178,11 @@ def test_load_config_rejects_more_than_four_visible_copies(tmp_path: Path) -> No
         (("visible", "melds"), [["1m", "1m", "1m", "1m", "1m"]]),
         (("visible", "melds"), [["1m", "east", "1m"]]),
         (("visible", "revealed"), {"tile": "1m"}),
+        (("visible_regions", "discards"), "region"),
+        (("visible_regions", "discards"), [{"x": 0}]),
+        (("visible_regions", "discards"), [{"x": -1, "y": 0, "slot_width": 1, "slot_height": 1, "stride": 1, "count": 1}]),
+        (("visible_regions", "discards"), [{"x": 0, "y": 0, "slot_width": 0, "slot_height": 1, "stride": 1, "count": 1}]),
+        (("visible_regions", "discards"), [{"x": 0, "y": 0, "slot_width": 1, "slot_height": 1, "stride": 1, "count": 0}]),
     ],
 )
 def test_load_config_rejects_invalid_values(
