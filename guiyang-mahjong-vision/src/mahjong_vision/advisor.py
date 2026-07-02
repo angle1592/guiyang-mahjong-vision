@@ -101,12 +101,14 @@ def _shanten(counts: list[int], fixed_melds: int = 0) -> int:
 def _effective_draws(
     counts: list[int],
     visible_counts: list[int],
+    discarded_tile_index: int,
     base_shanten: int,
     fixed_melds: int,
 ) -> int:
     total = 0
     for draw_index, count in enumerate(counts):
-        remaining = 4 - count - visible_counts[draw_index]
+        just_discarded_count = 1 if draw_index == discarded_tile_index else 0
+        remaining = 4 - count - visible_counts[draw_index] - just_discarded_count
         if remaining <= 0:
             continue
         counts[draw_index] += 1
@@ -158,6 +160,7 @@ def _rank_discards(
         effective_tiles = _effective_draws(
             counts,
             visible_counts,
+            tile_index,
             shanten_after,
             fixed_melds,
         )
@@ -205,6 +208,12 @@ def _normalize_visible_counts(visible_counts: VisibleCounts) -> list[int]:
                 f"visible count for {label}",
             )
         return counts
+
+    if not isinstance(visible_counts, Sequence) or isinstance(
+        visible_counts,
+        (str, bytes, bytearray),
+    ):
+        raise ValueError("visible_counts must be a mapping or a sequence of 27 tile counts")
 
     if len(visible_counts) != 27:
         raise ValueError("visible_counts must contain 27 tile counts")
