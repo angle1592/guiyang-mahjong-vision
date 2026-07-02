@@ -11,13 +11,7 @@
 - 使用现有 `TemplateStore.match()` 识别每个 slot。
 - 保存调试截图和 `visible-report.json`。
 
-当前流程不做：
-
-- 自动点击。
-- 自动出牌。
-- 自动控制游戏或账号。
-- 自动推断完整桌面布局。
-- 提交 `debug/` 目录中的截图或诊断文件。
+当前流程不做任何交互控制，只提供识别、裁剪、诊断和建议相关信息。也不要提交 `debug/` 目录中的截图或诊断文件。
 
 ## 前置条件
 
@@ -30,7 +24,23 @@ cd guiyang-mahjong-vision
 uv sync --extra test --extra build
 ```
 
-确认 `config.json` 中的 `window_title` 能匹配目标窗口标题。
+确认 `config.json` 中的 `window_title` 与目标窗口标题**精确匹配**。如果窗口标题有多余空格、不同后缀或不同语言，截图捕获可能找不到目标窗口。
+
+## 坐标系说明
+
+`visible_regions` 中的 `x` / `y` 不是桌面坐标。
+
+它们是相对 `debug/visible/frame.png` 左上角的像素坐标，也就是麻将窗口客户区截图内的坐标。一般不包含窗口标题栏、窗口边框，也不包含桌面左上角偏移。
+
+如果发生以下变化，需要重新校准：
+
+- 麻将窗口尺寸变化。
+- Windows 显示缩放变化。
+- 微信小程序缩放或布局变化。
+- 游戏皮肤、牌面样式或窗口 DPI 行为变化。
+- 从窗口模式切换到其他显示方式。
+
+校准时以 `frame.png` 为准：先在 `frame.png` 上估算公开牌左上角位置，再把该位置填入 `visible_regions`。
 
 ## 运行调试脚本
 
@@ -46,17 +56,48 @@ uv run python scripts/debug-visible-regions.py
 uv run python scripts/debug-visible-regions.py --output debug/visible
 ```
 
-脚本会生成类似文件：
+如果路径包含空格，请加引号：
+
+```powershell
+uv run python scripts/debug-visible-regions.py --output "debug/visible captures"
+```
+
+指定配置文件：
+
+```powershell
+uv run python scripts/debug-visible-regions.py --config "config.json" --output "debug/visible"
+```
+
+注意：嵌套项目 `.gitignore` 默认只忽略 `debug/` 目录。如果把 `--output` 指向 `debug/` 之外的位置，例如桌面或 `captures/`，这些文件不一定会被 Git 忽略，提交前需要手动检查。
+
+## 第一次运行时会生成什么
+
+默认 `config.json` 中的 `visible_regions` 为空：
+
+```json
+"visible_regions": {
+  "discards": [],
+  "melds": [],
+  "revealed": []
+}
+```
+
+因此第一次运行调试脚本时，通常只会生成：
 
 ```text
 debug/visible/frame.png
-debug/visible/discards_0_slot_00.png
-debug/visible/melds_0_slot_00.png
-debug/visible/revealed_0_slot_00.png
 debug/visible/visible-report.json
 ```
 
-`debug/` 已在嵌套项目 `.gitignore` 中忽略，不要手动提交这些截图或报告。
+此时不会生成 `discards_0_slot_00.png`、`melds_0_slot_00.png` 或其他 `*_slot_*.png`，因为还没有配置任何要裁剪的 region。
+
+正确流程是：
+
+1. 先运行脚本生成 `frame.png`。
+2. 打开 `frame.png`，根据截图估算公开牌区域坐标。
+3. 在 `config.json` 中填写至少一个 `visible_regions` region。
+4. 重新运行脚本。
+5. 第二次运行后才会出现对应的 `*_slot_*.png` 裁剪图。
 
 ## 调试输出怎么看
 
@@ -71,19 +112,50 @@ debug/visible/frame.png
 确认它是当前麻将窗口截图。如果截图不对，优先检查：
 
 - 麻将窗口是否打开。
-- `window_title` 是否正确。
+- `window_title` 是否与目标窗口标题精确匹配。
 - 窗口是否被遮挡或最小化。
-- 缩放比例是否稳定。
+- 窗口尺寸和 Windows 显示缩放是否稳定。
 
-### 2. 查看 slot 裁剪图
+### 2. 填写至少一个 region
 
-打开这些文件：
+根据 `frame.png` 估算最明显公开牌区域，例如自己的牌河。先只配置一个 region，不要一次配置所有玩家的区域。
+
+示例：
+
+```json
+"visible_regions": {
+  "discards": [
+    {
+      "x": 100,
+      "y": 260,
+      "slot_width": 42,
+      "slot_height": 58,
+      "stride": 44,
+      "count": 10
+    }
+  ],
+  "melds": [],
+  "revealed": []
+}
+```
+
+保存 `config.json` 后重新运行：
+
+```powershell
+uv run python scripts/debug-visible-regions.py
+```
+
+### 3. 查看 slot 裁剪图
+
+配置 region 并重新运行后，打开这些文件：
 
 ```text
 debug/visible/discards_0_slot_00.png
 debug/visible/discards_0_slot_01.png
 debug/visible/melds_0_slot_00.png
 ```
+
+实际会生成哪些 `*_slot_*.png`，取决于 `visible_regions` 中配置了哪些区域。
 
 目标是每张裁剪图尽量只包含一张完整公开牌。
 
@@ -97,7 +169,7 @@ debug/visible/melds_0_slot_00.png
 | 两张牌挤在一个 slot | slot_width 太大或 stride 太小 | 减小 slot_width，增大 stride |
 | slot 中没有牌 | x/y 或 count 不准 | 调整 x/y/count |
 
-### 3. 查看 visible-report.json
+### 4. 查看 visible-report.json
 
 打开：
 
@@ -125,7 +197,27 @@ debug/visible/visible-report.json
 - `label` 是否和裁剪图中的牌一致。
 - `score` 是否明显高于 `runner_up_score`。
 
-如果裁剪图正确但识别不准，优先检查模板质量和 `matching.threshold` / `matching.min_margin`，不要先改坐标。
+如果裁剪图正确但识别不准，优先补充公开牌模板或检查模板质量，不要先大幅降低匹配阈值。
+
+## matching 阈值说明
+
+`config.json` 中的 `matching` 控制模板匹配是否接受结果：
+
+```json
+"matching": {
+  "threshold": 0.82,
+  "min_margin": 0.04
+}
+```
+
+含义：
+
+| 字段 | 含义 |
+| --- | --- |
+| threshold | 最高匹配分数至少达到这个值才可能接受 |
+| min_margin | 第一名分数必须比第二名至少高出这个差值 |
+
+调试公开牌时，如果 `*_slot_*.png` 裁剪正确但 `accepted` 很少为 `true`，优先补充对应公开牌模板，或确认模板是否来自同一牌面样式。不要为了让结果通过而直接大幅降低 `threshold` 或 `min_margin`，否则会增加误识别风险。
 
 ## visible_regions 配置格式
 
@@ -156,12 +248,14 @@ debug/visible/visible-report.json
 
 | 字段 | 含义 |
 | --- | --- |
-| x | 第一个 slot 左上角 x 坐标 |
-| y | 第一个 slot 左上角 y 坐标 |
+| x | 第一个 slot 左上角在 `frame.png` 内的 x 坐标 |
+| y | 第一个 slot 左上角在 `frame.png` 内的 y 坐标 |
 | slot_width | 每个 slot 的裁剪宽度 |
 | slot_height | 每个 slot 的裁剪高度 |
 | stride | 相邻 slot 左上角的水平间距 |
 | count | 这个 region 中要裁剪的 slot 数量 |
+
+所有坐标和尺寸都使用像素。`x/y` 必须非负，`slot_width`、`slot_height`、`stride`、`count` 必须是正整数。
 
 当前 region 是水平排列模型。如果实际区域不是水平排列，先拆成多个 region，不要在一个 region 里硬套。
 
@@ -262,12 +356,14 @@ uv run python scripts/debug-visible-regions.py
 合并真实坐标前，至少确认：
 
 - `frame.png` 是目标麻将窗口。
+- `x/y` 是相对 `frame.png` 左上角的坐标，不是桌面坐标。
 - 每个 `*_slot_*.png` 基本只包含一张完整牌。
 - `visible-report.json` 中主要 slot 的 `accepted` 为 `true`。
 - `label` 和裁剪图一致。
 - 多次运行后没有旧 slot 图片残留。
+- 自定义输出目录不会误提交截图或诊断文件。
 - `debug/` 没有被提交。
-- 没有加入自动点击、自动出牌或游戏控制逻辑。
+- 没有加入交互控制逻辑。
 
 ## Codex review request
 
@@ -275,6 +371,8 @@ uv run python scripts/debug-visible-regions.py
 
 1. 文档步骤是否和 `scripts/debug-visible-regions.py` 当前行为一致。
 2. `visible_regions` 示例是否符合 `load_config()` 的校验规则。
-3. 是否明确提醒不要提交 `debug/` 截图和诊断文件。
-4. 是否明确避免自动点击、自动出牌、账号或游戏控制行为。
-5. 是否需要补充 Windows 路径、缩放比例、模板匹配阈值相关说明。
+3. 是否明确说明默认空 `visible_regions` 第一次只生成 `frame.png` 和 `visible-report.json`。
+4. 是否明确说明坐标系相对 `frame.png`，不是桌面坐标。
+5. 是否明确提醒不要提交 `debug/` 截图和诊断文件。
+6. 是否明确避免交互控制行为。
+7. 是否需要补充 Windows 路径、缩放比例、模板匹配阈值相关说明。
