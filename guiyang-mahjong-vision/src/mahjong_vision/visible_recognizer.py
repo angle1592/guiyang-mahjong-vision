@@ -68,4 +68,4 @@ class VisibleTileRecognizer:
             for region in regions.revealed
             for label in self._recognize_region(frame, region)
         )
-        return VisibleTiles(diskards=discards, melds=tuple(melds), revealed=revealed)
+        return VisibleTiles(discards=discards, melds=tuple(melds), revealed=revealed)
