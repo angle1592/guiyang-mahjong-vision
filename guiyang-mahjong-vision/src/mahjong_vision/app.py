@@ -40,6 +40,13 @@ def _display_hand(labels: tuple[str, ...]) -> str:
     return " ".join(Tile.from_label(label).display_name for label in labels)
 
 
+def _append_visible_detail(detail: str, visible_counts: list[int]) -> str:
+    visible_total = sum(visible_counts)
+    if not visible_total:
+        return detail
+    return f"{detail}；已见 {visible_total} 张"
+
+
 def _state_for_live_recognition(
     *,
     labels: tuple[str, ...],
@@ -47,9 +54,13 @@ def _state_for_live_recognition(
     unknown_count: int,
     elapsed_ms: float,
     weights: AdvisorWeights,
+    visible_counts: list[int],
 ) -> OverlayState:
     display = _display_hand(labels)
-    detail = f"检测到 {slot_count} 张，未识别 {unknown_count} 张；识别 {elapsed_ms:.1f} ms"
+    detail = _append_visible_detail(
+        f"检测到 {slot_count} 张，未识别 {unknown_count} 张；识别 {elapsed_ms:.1f} ms",
+        visible_counts,
+    )
 
     if slot_count in _BEFORE_DRAW_COUNTS:
         return OverlayState(
@@ -74,7 +85,7 @@ def _state_for_live_recognition(
                 recommendation="识别张数不完整，先别按建议打",
                 detail=detail,
             )
-        recommendation = advise(labels, weights)
+        recommendation = advise(labels, weights, visible_counts)
         return OverlayState(
             status="该出牌",
             hand=display,
@@ -82,7 +93,10 @@ def _state_for_live_recognition(
                 recommendation.reason,
                 recommendation.discard,
             ),
-            detail=f"检测到 {slot_count} 张；识别 {elapsed_ms:.1f} ms",
+            detail=_append_visible_detail(
+                f"检测到 {slot_count} 张；识别 {elapsed_ms:.1f} ms",
+                visible_counts,
+            ),
         )
 
     return OverlayState(
@@ -107,6 +121,7 @@ def worker(
         config.advisor.eight_dot_weight,
         config.advisor.pair_weight,
     )
+    visible_counts = config.visible.to_counts()
     interval = 1.0 / config.runtime.fps
 
     with WindowCapture(config.window_title) as capture:
@@ -133,6 +148,7 @@ def worker(
                             unknown_count=unknown_count,
                             elapsed_ms=result.elapsed_ms,
                             weights=weights,
+                            visible_counts=visible_counts,
                         )
                     )
                     continue
@@ -149,6 +165,7 @@ def worker(
                         unknown_count=unknown_count,
                         elapsed_ms=result.elapsed_ms,
                         weights=weights,
+                        visible_counts=visible_counts,
                     )
                 )
             except WindowUnavailable:

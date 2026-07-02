@@ -1,9 +1,13 @@
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 
 from mahjong_vision import app
 from mahjong_vision.advisor import AdvisorWeights
 from mahjong_vision.app import _state_for_live_recognition
+
+
+WEIGHTS = AdvisorWeights(2.0, 2.5, 0.4)
 
 
 def test_runtime_root_uses_project_root_when_not_frozen(monkeypatch):
@@ -39,7 +43,8 @@ def test_legal_slot_count_with_unknowns_does_not_claim_illegal_hand():
         slot_count=11,
         unknown_count=2,
         elapsed_ms=107.0,
-        weights=AdvisorWeights(2.0, 2.5, 0.4),
+        weights=WEIGHTS,
+        visible_counts=[0] * 27,
     )
 
     assert "不符合" not in state.recommendation
@@ -68,9 +73,58 @@ def test_before_draw_hand_does_not_show_discard_advice():
         slot_count=13,
         unknown_count=0,
         elapsed_ms=20.0,
-        weights=AdvisorWeights(2.0, 2.5, 0.4),
+        weights=WEIGHTS,
+        visible_counts=[0] * 27,
     )
 
     assert state.recommendation == "摸牌后再提示"
     assert "优先打" not in state.recommendation
     assert "等待出牌" in state.status
+
+
+def test_nonzero_visible_counts_are_passed_to_advisor_and_displayed(monkeypatch):
+    visible_counts = [0] * 27
+    visible_counts[0] = 1
+    visible_counts[9] = 3
+    captured = {}
+
+    def fake_advise(labels, weights, visible_counts):
+        captured["labels"] = labels
+        captured["weights"] = weights
+        captured["visible_counts"] = visible_counts
+        return SimpleNamespace(reason="测试建议", discard="9s")
+
+    monkeypatch.setattr(app, "advise", fake_advise)
+    labels = (
+        "1m",
+        "2m",
+        "3m",
+        "4m",
+        "5m",
+        "6m",
+        "2p",
+        "3p",
+        "4p",
+        "6p",
+        "7p",
+        "8p",
+        "1s",
+        "9s",
+    )
+
+    state = _state_for_live_recognition(
+        labels=labels,
+        slot_count=14,
+        unknown_count=0,
+        elapsed_ms=12.5,
+        weights=WEIGHTS,
+        visible_counts=visible_counts,
+    )
+
+    assert captured == {
+        "labels": labels,
+        "weights": WEIGHTS,
+        "visible_counts": visible_counts,
+    }
+    assert state.recommendation == "优先打九条"
+    assert "已见 4 张" in state.detail

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
+from mahjong_vision.visible import VisibleTiles
+
 
 @dataclass(frozen=True)
 class Rect:
@@ -58,6 +60,7 @@ class AppConfig:
     matching: MatchingConfig
     runtime: RuntimeConfig
     advisor: AdvisorConfig
+    visible: VisibleTiles
 
 
 def _object(value: object, name: str) -> dict[str, object]:
@@ -85,6 +88,29 @@ def _number(data: dict[str, object], key: str, section: str) -> int | float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{section}.{key} must be numeric")
     return value
+
+
+def _optional_array(data: dict[str, object], key: str, section: str) -> tuple[object, ...]:
+    value = data.get(key, [])
+    if not isinstance(value, list):
+        raise ValueError(f"{section}.{key} must be a JSON array")
+    return tuple(value)
+
+
+def _visible_tiles(raw: dict[str, object]) -> VisibleTiles:
+    visible_raw = raw.get("visible", {})
+    visible = _object(visible_raw, "visible")
+    discards = _optional_array(visible, "discards", "visible")
+    revealed = _optional_array(visible, "revealed", "visible")
+    melds = _optional_array(visible, "melds", "visible")
+    for index, meld in enumerate(melds):
+        if not isinstance(meld, list):
+            raise ValueError(f"visible.melds[{index}] must be a JSON array")
+    return VisibleTiles(
+        discards=discards,
+        melds=tuple(tuple(meld) for meld in melds),
+        revealed=revealed,
+    )
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -142,4 +168,5 @@ def load_config(path: str | Path) -> AppConfig:
         matching=matching,
         runtime=runtime,
         advisor=advisor,
+        visible=_visible_tiles(raw),
     )

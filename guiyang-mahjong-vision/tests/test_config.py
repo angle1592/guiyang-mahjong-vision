@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from mahjong_vision.config import load_config
+from mahjong_vision.domain import Tile
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
@@ -24,6 +25,10 @@ def write_config(tmp_path: Path, updates: dict[tuple[str, ...], Any]) -> Path:
     return config_path
 
 
+def count_for(counts: list[int], label: str) -> int:
+    return counts[Tile.from_label(label).index]
+
+
 def test_load_config_builds_fourteen_hand_slots() -> None:
     config = load_config(PROJECT_ROOT / "config.json")
 
@@ -32,6 +37,7 @@ def test_load_config_builds_fourteen_hand_slots() -> None:
     assert config.window_title == "多乐贵阳捉鸡麻将"
     assert len(slots) == 14
     assert slots[-1].x == config.hand.x + 13 * config.hand.stride
+    assert config.visible.to_counts() == [0] * 27
 
 
 def test_load_config_rejects_non_fourteen_tile_hand(tmp_path: Path) -> None:
@@ -57,6 +63,52 @@ def test_load_config_accepts_zero_hand_coordinates(tmp_path: Path) -> None:
 
     assert config.hand.x == 0
     assert config.hand.y == 0
+
+
+def test_load_config_accepts_visible_tile_sources(tmp_path: Path) -> None:
+    config = load_config(
+        write_config(
+            tmp_path,
+            {
+                ("visible", "discards"): ["1m", "2m", "8s"],
+                ("visible", "melds"): [["3p", "3p", "3p"]],
+                ("visible", "revealed"): ["8p"],
+            },
+        )
+    )
+
+    counts = config.visible.to_counts()
+
+    assert count_for(counts, "1m") == 1
+    assert count_for(counts, "2m") == 1
+    assert count_for(counts, "3p") == 3
+    assert count_for(counts, "8p") == 1
+    assert count_for(counts, "8s") == 1
+    assert sum(counts) == 7
+
+
+def test_load_config_defaults_missing_visible_section(tmp_path: Path) -> None:
+    raw_config = json.loads((PROJECT_ROOT / "config.json").read_text(encoding="utf-8"))
+    raw_config.pop("visible", None)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(raw_config), encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.visible.to_counts() == [0] * 27
+
+
+def test_load_config_rejects_more_than_four_visible_copies(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="too many visible copies of 1m"):
+        load_config(
+            write_config(
+                tmp_path,
+                {
+                    ("visible", "discards"): ["1m", "1m"],
+                    ("visible", "melds"): [["1m", "1m", "1m"]],
+                },
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -87,6 +139,14 @@ def test_load_config_accepts_zero_hand_coordinates(tmp_path: Path) -> None:
         (("advisor", "one_bamboo_weight"), True),
         (("advisor", "eight_dot_weight"), "2.5"),
         (("advisor", "pair_weight"), False),
+        (("visible", "discards"), "1m"),
+        (("visible", "discards"), ["10m"]),
+        (("visible", "melds"), ["1m"]),
+        (("visible", "melds"), [[]]),
+        (("visible", "melds"), [["1m", "1m"]]),
+        (("visible", "melds"), [["1m", "1m", "1m", "1m", "1m"]]),
+        (("visible", "melds"), [["1m", "east", "1m"]]),
+        (("visible", "revealed"), {"tile": "1m"}),
     ],
 )
 def test_load_config_rejects_invalid_values(
