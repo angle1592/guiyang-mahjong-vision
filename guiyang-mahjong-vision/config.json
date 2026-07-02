@@ -20,5 +20,10 @@
     "one_bamboo_weight": 2.0,
     "eight_dot_weight": 2.5,
     "pair_weight": 0.4
+  },
+  "visible": {
+    "discards": [],
+    "melds": [],
+    "revealed": []
   }
 }
