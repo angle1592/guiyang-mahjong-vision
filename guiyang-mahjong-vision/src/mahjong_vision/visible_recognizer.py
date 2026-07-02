@@ -58,14 +58,14 @@ class VisibleTileRecognizer:
             for region in regions.discards
             for label in self._recognize_region(frame, region)
         )
-        revealed = tuple(
-            label
-            for region in regions.revealed
-            for label in self._recognize_region(frame, region)
-        )
         melds = []
         for region in regions.melds:
             labels = self._recognize_region(frame, region)
             if len(labels) == region.count:
                 melds.append(labels)
-        return VisibleTiles(discards=discards, melds=tuple(melds), revealed=revealed)
+        revealed = tuple(
+            label
+            for region in regions.revealed
+            for label in self._recognize_region(frame, region)
+        )
+        return VisibleTiles(diskards=discards, melds=tuple(melds), revealed=revealed)
