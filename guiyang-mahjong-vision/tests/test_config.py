@@ -98,6 +98,19 @@ def test_load_config_defaults_missing_visible_section(tmp_path: Path) -> None:
     assert config.visible.to_counts() == [0] * 27
 
 
+def test_load_config_rejects_more_than_four_visible_copies(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="too many visible copies of 1m"):
+        load_config(
+            write_config(
+                tmp_path,
+                {
+                    ("visible", "discards"): ["1m", "1m"],
+                    ("visible", "melds"): [["1m", "1m", "1m"]],
+                },
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("path", "value"),
     [
@@ -129,7 +142,10 @@ def test_load_config_defaults_missing_visible_section(tmp_path: Path) -> None:
         (("visible", "discards"), "1m"),
         (("visible", "discards"), ["10m"]),
         (("visible", "melds"), ["1m"]),
-        (("visible", "melds"), [["1m", "east"]]),
+        (("visible", "melds"), [[]]),
+        (("visible", "melds"), [["1m", "1m"]]),
+        (("visible", "melds"), [["1m", "1m", "1m", "1m", "1m"]]),
+        (("visible", "melds"), [["1m", "east", "1m"]]),
         (("visible", "revealed"), {"tile": "1m"}),
     ],
 )
