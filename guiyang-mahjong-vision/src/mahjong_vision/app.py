@@ -6,6 +6,8 @@ import sys
 from threading import Event, Thread
 from time import perf_counter, sleep
 
+import numpy as np
+
 from mahjong_vision.advisor import AdvisorWeights, advise
 from mahjong_vision.capture import (
     WindowCapture,
@@ -13,11 +15,12 @@ from mahjong_vision.capture import (
     detect_hand_slots,
     slot_has_tile,
 )
-from mahjong_vision.config import load_config
+from mahjong_vision.config import AppConfig, load_config
 from mahjong_vision.domain import Tile
 from mahjong_vision.overlay import Overlay, OverlayState
 from mahjong_vision.recognizer import HandRecognizer, StableHand
 from mahjong_vision.templates import TemplateStore
+from mahjong_vision.visible_recognizer import VisibleTileRecognizer
 
 
 def _plain_recommendation(reason: str, discard: str) -> str:
@@ -45,6 +48,25 @@ def _append_visible_detail(detail: str, visible_counts: list[int]) -> str:
     if not visible_total:
         return detail
     return f"{detail}；已见 {visible_total} 张"
+
+
+def _visible_counts_for_frame(
+    frame: np.ndarray,
+    config: AppConfig,
+    recognizer: VisibleTileRecognizer,
+) -> list[int]:
+    configured_counts = config.visible.to_counts()
+    if not config.visible_regions.has_regions():
+        return configured_counts
+
+    try:
+        recognized = recognizer.recognize(frame, config.visible_regions)
+    except ValueError:
+        return configured_counts
+
+    if not recognized.labels():
+        return configured_counts
+    return recognized.to_counts()
 
 
 def _state_for_live_recognition(
@@ -115,13 +137,13 @@ def worker(
 ) -> None:
     config = load_config(config_path)
     recognizer = HandRecognizer(store)
+    visible_recognizer = VisibleTileRecognizer(store)
     stable = StableHand(config.runtime.stable_frames)
     weights = AdvisorWeights(
         config.advisor.one_bamboo_weight,
         config.advisor.eight_dot_weight,
         config.advisor.pair_weight,
     )
-    visible_counts = config.visible.to_counts()
     interval = 1.0 / config.runtime.fps
 
     with WindowCapture(config.window_title) as capture:
@@ -129,6 +151,11 @@ def worker(
             started = perf_counter()
             try:
                 frame = capture.capture()
+                visible_counts = _visible_counts_for_frame(
+                    frame,
+                    config,
+                    visible_recognizer,
+                )
                 slots = detect_hand_slots(frame)
                 if not slots:
                     updates.put(OverlayState(status="等待摸牌：未检测到手牌"))
