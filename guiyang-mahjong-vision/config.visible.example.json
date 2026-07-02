@@ -1,0 +1,43 @@
+{
+  "window_title": "多乐贵阳捉鸡麻将",
+  "hand": {
+    "x": 7,
+    "y": 576,
+    "slot_width": 74,
+    "slot_height": 103,
+    "stride": 78,
+    "count": 14
+  },
+  "matching": {
+    "threshold": 0.82,
+    "min_margin": 0.04
+  },
+  "runtime": {
+    "fps": 20,
+    "stable_frames": 2
+  },
+  "advisor": {
+    "one_bamboo_weight": 2.0,
+    "eight_dot_weight": 2.5,
+    "pair_weight": 0.4
+  },
+  "visible": {
+    "discards": [],
+    "melds": [],
+    "revealed": []
+  },
+  "visible_regions": {
+    "discards": [
+      {
+        "x": 485,
+        "y": 160,
+        "slot_width": 34,
+        "slot_height": 48,
+        "stride": 34,
+        "count": 6
+      }
+    ],
+    "melds": [],
+    "revealed": []
+  }
+}

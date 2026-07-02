@@ -335,6 +335,39 @@ uv run python scripts/debug-visible-regions.py
 
 `revealed` 用于其他公开牌来源。没有稳定用途时保持空数组。
 
+## 实测示例配置
+
+仓库中的 `config.visible.example.json` 包含一次 Windows 实机校准得到的顶部中央第一排弃牌区域：
+
+```json
+{
+  "x": 485,
+  "y": 160,
+  "slot_width": 34,
+  "slot_height": 48,
+  "stride": 34,
+  "count": 6
+}
+```
+
+该示例仅在以下环境中验证过裁剪几何：
+
+- Mahjong 窗口客户区为 `896 × 552`。
+- Windows 窗口 DPI 为 `120`，即 125% 显示缩放。
+- `frame.png` 实际尺寸为 `1120 × 690`。
+- 目标窗口完整可见且未被其他窗口遮挡。
+- 区域对应顶部中央玩家牌河的第一排 6 个槽位。
+
+可以用示例配置运行调试脚本：
+
+```powershell
+uv run python scripts/debug-visible-regions.py --config config.visible.example.json
+```
+
+实测中 6 个槽位均能完整裁出单张牌，没有明显切边或相邻牌串入；但现有手牌模板对这些公开牌的匹配结果为 `0/6 accepted`。因此该文件只用于坐标复现和继续采集公开牌模板，不能视为可直接启用的生产配置。
+
+`WindowCapture` 捕获目标窗口所在的屏幕区域。若麻将窗口被 Chrome 等其他窗口遮挡，`frame.png` 会包含遮挡内容。运行调试脚本和实时识别时必须保持麻将窗口未最小化且不被遮挡。
+
 ## 什么时候不要改默认 config.json
 
 如果没有稳定的真实窗口截图和多次校准结果，不建议直接修改默认 `config.json`。
