@@ -35,6 +35,37 @@ class HandConfig:
 
 
 @dataclass(frozen=True)
+class VisibleRegionConfig:
+    x: int
+    y: int
+    slot_width: int
+    slot_height: int
+    stride: int
+    count: int
+
+    def slot_rects(self) -> tuple[Rect, ...]:
+        return tuple(
+            Rect(
+                x=self.x + index * self.stride,
+                y=self.y,
+                width=self.slot_width,
+                height=self.slot_height,
+            )
+            for index in range(self.count)
+        )
+
+
+@dataclass(frozen=True)
+class VisibleRegionsConfig:
+    discards: tuple[VisibleRegionConfig, ...]
+    melds: tuple[VisibleRegionConfig, ...]
+    revealed: tuple[VisibleRegionConfig, ...]
+
+    def has_regions(self) -> bool:
+        return bool(self.discards or self.melds or self.revealed)
+
+
+@dataclass(frozen=True)
 class MatchingConfig:
     threshold: float
     min_margin: float
@@ -61,6 +92,7 @@ class AppConfig:
     runtime: RuntimeConfig
     advisor: AdvisorConfig
     visible: VisibleTiles
+    visible_regions: VisibleRegionsConfig
 
 
 def _object(value: object, name: str) -> dict[str, object]:
@@ -110,6 +142,45 @@ def _visible_tiles(raw: dict[str, object]) -> VisibleTiles:
         discards=discards,
         melds=tuple(tuple(meld) for meld in melds),
         revealed=revealed,
+    )
+
+
+def _visible_region(value: object, section: str) -> VisibleRegionConfig:
+    raw = _object(value, section)
+    values = {
+        key: _integer(raw, key, section)
+        for key in ("x", "y", "slot_width", "slot_height", "stride", "count")
+    }
+    if values["x"] < 0 or values["y"] < 0:
+        raise ValueError(f"{section}.x and {section}.y must be non-negative")
+    if any(values[key] <= 0 for key in ("slot_width", "slot_height", "stride", "count")):
+        raise ValueError(f"{section} geometry must be positive")
+    return VisibleRegionConfig(**values)
+
+
+def _visible_region_array(
+    data: dict[str, object],
+    key: str,
+    section: str,
+) -> tuple[VisibleRegionConfig, ...]:
+    regions = tuple(
+        _visible_region(region, f"{section}.{key}[{index}]")
+        for index, region in enumerate(_optional_array(data, key, section))
+    )
+    if key == "melds":
+        for index, region in enumerate(regions):
+            if region.count not in (3, 4):
+                raise ValueError(f"{section}.{key}[{index}].count must be 3 or 4")
+    return regions
+
+
+def _visible_regions(raw: dict[str, object]) -> VisibleRegionsConfig:
+    regions_raw = raw.get("visible_regions", {})
+    regions = _object(regions_raw, "visible_regions")
+    return VisibleRegionsConfig(
+        discards=_visible_region_array(regions, "discards", "visible_regions"),
+        melds=_visible_region_array(regions, "melds", "visible_regions"),
+        revealed=_visible_region_array(regions, "revealed", "visible_regions"),
     )
 
 
@@ -169,4 +240,5 @@ def load_config(path: str | Path) -> AppConfig:
         runtime=runtime,
         advisor=advisor,
         visible=_visible_tiles(raw),
+        visible_regions=_visible_regions(raw),
     )
