@@ -24,10 +24,13 @@ def _normalize_melds(melds: MeldLabels) -> tuple[tuple[str, ...], ...]:
     if isinstance(melds, (str, bytes, bytearray)):
         raise ValueError("melds must be an iterable of tile-label groups")
 
-    return tuple(
-        _normalize_labels(meld, f"melds[{index}]")
-        for index, meld in enumerate(melds)
-    )
+    normalized: list[tuple[str, ...]] = []
+    for index, meld in enumerate(melds):
+        labels = _normalize_labels(meld, f"melds[{index}]")
+        if len(labels) not in (3, 4):
+            raise ValueError(f"melds[{index}] must contain 3 or 4 tiles")
+        normalized.append(labels)
+    return tuple(normalized)
 
 
 def _add_labels(counts: list[int], labels: tuple[str, ...]) -> None:
@@ -38,6 +41,19 @@ def _add_labels(counts: list[int], labels: tuple[str, ...]) -> None:
             raise ValueError(f"too many visible copies of {tile.label}")
 
 
+def _build_counts(
+    discards: tuple[str, ...],
+    melds: tuple[tuple[str, ...], ...],
+    revealed: tuple[str, ...],
+) -> tuple[int, ...]:
+    counts = [0] * 27
+    _add_labels(counts, discards)
+    for meld in melds:
+        _add_labels(counts, meld)
+    _add_labels(counts, revealed)
+    return tuple(counts)
+
+
 @dataclass(frozen=True)
 class VisibleTiles:
     discards: TileLabels = ()
@@ -45,17 +61,13 @@ class VisibleTiles:
     revealed: TileLabels = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "discards",
-            _normalize_labels(self.discards, "discards"),
-        )
-        object.__setattr__(self, "melds", _normalize_melds(self.melds))
-        object.__setattr__(
-            self,
-            "revealed",
-            _normalize_labels(self.revealed, "revealed"),
-        )
+        discards = _normalize_labels(self.discards, "discards")
+        melds = _normalize_melds(self.melds)
+        revealed = _normalize_labels(self.revealed, "revealed")
+        _build_counts(discards, melds, revealed)
+        object.__setattr__(self, "discards", discards)
+        object.__setattr__(self, "melds", melds)
+        object.__setattr__(self, "revealed", revealed)
 
     def labels(self) -> tuple[str, ...]:
         return (
@@ -65,12 +77,7 @@ class VisibleTiles:
         )
 
     def to_counts(self) -> list[int]:
-        counts = [0] * 27
-        _add_labels(counts, self.discards)
-        for meld in self.melds:
-            _add_labels(counts, meld)
-        _add_labels(counts, self.revealed)
-        return counts
+        return list(_build_counts(self.discards, self.melds, self.revealed))
 
 
 def to_visible_counts(visible_tiles: VisibleTiles) -> list[int]:
