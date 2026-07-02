@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from mahjong_vision.domain import Tile
+
+
+VisibleCounts = Mapping[str, int] | Sequence[int] | None
 
 
 @dataclass(frozen=True)
@@ -96,16 +100,20 @@ def _shanten(counts: list[int], fixed_melds: int = 0) -> int:
 
 def _effective_draws(
     counts: list[int],
+    visible_counts: list[int],
+    discarded_tile_index: int,
     base_shanten: int,
     fixed_melds: int,
 ) -> int:
     total = 0
     for draw_index, count in enumerate(counts):
-        if count >= 4:
+        just_discarded_count = 1 if draw_index == discarded_tile_index else 0
+        remaining = 4 - count - visible_counts[draw_index] - just_discarded_count
+        if remaining <= 0:
             continue
         counts[draw_index] += 1
         if _shanten(counts, fixed_melds) < base_shanten:
-            total += 4 - count
+            total += remaining
         counts[draw_index] -= 1
     return total
 
@@ -139,6 +147,7 @@ def _rank_discards(
     counts: list[int],
     weights: AdvisorWeights,
     fixed_melds: int,
+    visible_counts: list[int],
 ) -> tuple[Alternative, ...]:
     alternatives: list[Alternative] = []
     original_counts = counts.copy()
@@ -148,7 +157,13 @@ def _rank_discards(
         tile = Tile(tile_index)
         counts[tile_index] -= 1
         shanten_after = _shanten(counts, fixed_melds)
-        effective_tiles = _effective_draws(counts, shanten_after, fixed_melds)
+        effective_tiles = _effective_draws(
+            counts,
+            visible_counts,
+            tile_index,
+            shanten_after,
+            fixed_melds,
+        )
         counts[tile_index] += 1
         alternatives.append(
             Alternative(
@@ -174,6 +189,47 @@ def _rank_discards(
     return tuple(alternatives)
 
 
+def _validate_tile_count(count: int, name: str) -> int:
+    if type(count) is not int or not 0 <= count <= 4:
+        raise ValueError(f"{name} must be an integer from 0 to 4")
+    return count
+
+
+def _normalize_visible_counts(visible_counts: VisibleCounts) -> list[int]:
+    counts = [0] * 27
+    if visible_counts is None:
+        return counts
+
+    if isinstance(visible_counts, Mapping):
+        for label, count in visible_counts.items():
+            tile = Tile.from_label(label)
+            counts[tile.index] = _validate_tile_count(
+                count,
+                f"visible count for {label}",
+            )
+        return counts
+
+    if not isinstance(visible_counts, Sequence) or isinstance(
+        visible_counts,
+        (str, bytes, bytearray),
+    ):
+        raise ValueError("visible_counts must be a mapping or a sequence of 27 tile counts")
+
+    if len(visible_counts) != 27:
+        raise ValueError("visible_counts must contain 27 tile counts")
+
+    return [
+        _validate_tile_count(count, f"visible count at index {index}")
+        for index, count in enumerate(visible_counts)
+    ]
+
+
+def _validate_known_counts(counts: list[int], visible_counts: list[int]) -> None:
+    for index, (hand_count, visible_count) in enumerate(zip(counts, visible_counts)):
+        if hand_count + visible_count > 4:
+            raise ValueError(f"too many known copies of {Tile(index).label}")
+
+
 def _counts(labels: tuple[str, ...]) -> list[int]:
     counts = [0] * 27
     for label in labels:
@@ -194,10 +250,16 @@ def _hand_shape(tile_count: int) -> tuple[int, bool]:
     raise ValueError("advisor requires a legal concealed hand size")
 
 
-def advise(labels: tuple[str, ...], weights: AdvisorWeights) -> Advice:
+def advise(
+    labels: tuple[str, ...],
+    weights: AdvisorWeights,
+    visible_counts: VisibleCounts = None,
+) -> Advice:
     fixed_melds, after_draw = _hand_shape(len(labels))
 
     counts = _counts(labels)
+    known_visible_counts = _normalize_visible_counts(visible_counts)
+    _validate_known_counts(counts, known_visible_counts)
 
     if not after_draw:
         best_draw: Tile | None = None
@@ -205,10 +267,15 @@ def advise(labels: tuple[str, ...], weights: AdvisorWeights) -> Advice:
         best_alternatives: tuple[Alternative, ...] = ()
         best_key: tuple[int, int, float, int] | None = None
         for draw_index, count in enumerate(counts):
-            if count >= 4:
+            if count + known_visible_counts[draw_index] >= 4:
                 continue
             counts[draw_index] += 1
-            alternatives = _rank_discards(counts, weights, fixed_melds)
+            alternatives = _rank_discards(
+                counts,
+                weights,
+                fixed_melds,
+                known_visible_counts,
+            )
             counts[draw_index] -= 1
             candidate = alternatives[0]
             key = (
@@ -238,7 +305,12 @@ def advise(labels: tuple[str, ...], weights: AdvisorWeights) -> Advice:
             alternatives=best_alternatives,
         )
 
-    alternatives = _rank_discards(counts, weights, fixed_melds)
+    alternatives = _rank_discards(
+        counts,
+        weights,
+        fixed_melds,
+        known_visible_counts,
+    )
     best = alternatives[0]
     display_name = Tile.from_label(best.discard).display_name
     meld_text = f"副露{fixed_melds}组，" if fixed_melds else ""
