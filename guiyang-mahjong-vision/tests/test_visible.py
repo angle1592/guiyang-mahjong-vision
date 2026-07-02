@@ -54,7 +54,7 @@ def test_visible_tiles_rejects_invalid_tile_labels():
         VisibleTiles(discards=("10m",))
 
     with pytest.raises(ValueError, match="tile label"):
-        VisibleTiles(melds=(("1m", "east"),))
+        VisibleTiles(melds=(("1m", "east", "1m"),))
 
 
 def test_visible_tiles_rejects_string_sources():
@@ -68,11 +68,24 @@ def test_visible_tiles_rejects_string_sources():
         VisibleTiles(melds=("1m",))
 
 
-def test_visible_tiles_rejects_more_than_four_visible_copies():
-    visible = VisibleTiles(
-        discards=("1m", "1m"),
-        melds=(("1m", "1m", "1m"),),
-    )
+@pytest.mark.parametrize(
+    "meld",
+    [(), ("1m",), ("1m", "1m"), ("1m", "1m", "1m", "1m", "1m")],
+)
+def test_visible_tiles_rejects_melds_that_are_not_three_or_four_tiles(meld):
+    with pytest.raises(ValueError, match=r"melds\[0\].*3 or 4"):
+        VisibleTiles(melds=(meld,))
 
+
+def test_visible_tiles_accepts_four_tile_melds():
+    visible = VisibleTiles(melds=(("1m", "1m", "1m", "1m"),))
+
+    assert count_for(visible.to_counts(), "1m") == 4
+
+
+def test_visible_tiles_rejects_more_than_four_visible_copies_on_construction():
     with pytest.raises(ValueError, match="too many visible copies of 1m"):
-        visible.to_counts()
+        VisibleTiles(
+            discards=("1m", "1m"),
+            melds=(("1m", "1m", "1m"),),
+        )
