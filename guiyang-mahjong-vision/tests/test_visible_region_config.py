@@ -36,7 +36,7 @@ def test_load_config_accepts_visible_region_sources(tmp_path: Path) -> None:
             tmp_path,
             {
                 "discards": [region()],
-                "melds": [region(count=3)],
+                "melds": [region(count=3), region(count=4)],
                 "revealed": [region(count=1)],
             },
         )
@@ -45,6 +45,7 @@ def test_load_config_accepts_visible_region_sources(tmp_path: Path) -> None:
     assert config.visible_regions.has_regions()
     assert config.visible_regions.discards[0].slot_rects()[1].x == 45
     assert config.visible_regions.melds[0].count == 3
+    assert config.visible_regions.melds[1].count == 4
     assert config.visible_regions.revealed[0].count == 1
 
 
@@ -69,6 +70,8 @@ def test_load_config_defaults_missing_visible_regions(tmp_path: Path) -> None:
         {"discards": [region(slot_width=0)]},
         {"discards": [region(count=0)]},
         {"discards": [region(stride=True)]},
+        {"melds": [region(count=2)]},
+        {"melds": [region(count=5)]},
     ],
 )
 def test_load_config_rejects_invalid_visible_regions(
