@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 import mss
 import numpy as np
+import cv2
 import pywintypes
 import win32gui
 from mss.exception import ScreenShotError
@@ -33,6 +34,40 @@ def crop_slots(
     return tuple(slots)
 
 
+def slot_has_tile(slot: np.ndarray) -> bool:
+    if slot.ndim == 3:
+        gray = slot[:, :, :3].mean(axis=2)
+    else:
+        gray = slot
+    return float(gray.std()) > 20.0 and float((gray > 180).mean()) > 0.02
+
+
+def detect_hand_slots(frame: np.ndarray) -> tuple[np.ndarray, ...]:
+    bottom = frame[max(0, frame.shape[0] - 160):, :, :3]
+    gray = cv2.cvtColor(bottom, cv2.COLOR_BGR2GRAY)
+    _, threshold = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY)
+    count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(
+        threshold,
+        8,
+    )
+    boxes: list[tuple[int, int, int, int]] = []
+    for index in range(1, count):
+        x, y, width, height, area = stats[index]
+        if width > 120 and height > 70:
+            slot_count = max(1, round(width / 78))
+            slot_width = width / slot_count
+            for slot_index in range(slot_count):
+                left = int(round(x + slot_index * slot_width))
+                right = int(round(x + (slot_index + 1) * slot_width))
+                if right - left > 40:
+                    boxes.append((left, int(y), right - left, int(height)))
+            continue
+        if area > 1000 and width > 40 and height > 70:
+            boxes.append((int(x), int(y), int(width), int(height)))
+    boxes.sort()
+    return tuple(bottom[y:y + height, x:x + width].copy() for x, y, width, height in boxes)
+
+
 @dataclass
 class WindowCapture:
     title: str
@@ -57,7 +92,9 @@ class WindowCapture:
             handle = win32gui.FindWindow(None, self.title)
             if not handle or win32gui.IsIconic(handle):
                 raise WindowUnavailable(f"window is unavailable: {self.title}")
-            left, top, right, bottom = win32gui.GetWindowRect(handle)
+            left, top, right, bottom = win32gui.GetClientRect(handle)
+            left, top = win32gui.ClientToScreen(handle, (left, top))
+            right, bottom = win32gui.ClientToScreen(handle, (right, bottom))
         except pywintypes.error as error:
             raise WindowUnavailable(
                 f"window is unavailable: {self.title}"

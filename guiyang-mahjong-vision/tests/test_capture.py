@@ -4,7 +4,13 @@ import pywintypes
 from mss.exception import ScreenShotError
 
 from mahjong_vision import capture
-from mahjong_vision.capture import WindowCapture, WindowUnavailable, crop_slots
+from mahjong_vision.capture import (
+    WindowCapture,
+    WindowUnavailable,
+    crop_slots,
+    detect_hand_slots,
+    slot_has_tile,
+)
 from mahjong_vision.config import HandConfig
 
 
@@ -34,8 +40,13 @@ def patch_available_window(monkeypatch):
     monkeypatch.setattr(capture.win32gui, "IsIconic", lambda _handle: False)
     monkeypatch.setattr(
         capture.win32gui,
-        "GetWindowRect",
-        lambda _handle: (100, 200, 108, 206),
+        "GetClientRect",
+        lambda _handle: (0, 0, 8, 6),
+    )
+    monkeypatch.setattr(
+        capture.win32gui,
+        "ClientToScreen",
+        lambda _handle, point: (100 + point[0], 200 + point[1]),
     )
 
 
@@ -78,6 +89,30 @@ def test_crop_slots_rejects_slot_outside_frame():
 
     with pytest.raises(ValueError, match="outside"):
         crop_slots(frame, hand)
+
+
+def test_slot_has_tile_distinguishes_blank_and_real_slots():
+    blank = np.full((103, 74, 4), 24, dtype=np.uint8)
+    tile = blank.copy()
+    tile[10:90, 8:66] = 240
+    tile[14:86, 12:62] = 255
+
+    assert not slot_has_tile(blank)
+    assert slot_has_tile(tile)
+
+
+def test_detect_hand_slots_finds_bright_bottom_tiles():
+    frame = np.zeros((140, 260, 3), dtype=np.uint8)
+    frame[:, :] = (20, 80, 80)
+    for index, x in enumerate((5, 60, 115)):
+        frame[25:130, x:x + 45] = 240
+        frame[30:120, x + 4:x + 41] = 255 - index * 20
+
+    slots = detect_hand_slots(frame)
+
+    assert len(slots) == 3
+    assert slots[0].shape[0] >= 90
+    assert slots[0].shape[1] >= 40
 
 
 def test_window_capture_grabs_the_wechat_window(monkeypatch):
@@ -136,8 +171,13 @@ def test_window_capture_rejects_invalid_window_bounds(monkeypatch):
     monkeypatch.setattr(capture.win32gui, "IsIconic", lambda _handle: False)
     monkeypatch.setattr(
         capture.win32gui,
-        "GetWindowRect",
-        lambda _handle: (100, 200, 100, 206),
+        "GetClientRect",
+        lambda _handle: (0, 0, 0, 6),
+    )
+    monkeypatch.setattr(
+        capture.win32gui,
+        "ClientToScreen",
+        lambda _handle, point: (100 + point[0], 200 + point[1]),
     )
 
     with pytest.raises(WindowUnavailable):
@@ -145,7 +185,7 @@ def test_window_capture_rejects_invalid_window_bounds(monkeypatch):
 
 
 def test_window_capture_converts_window_api_race(monkeypatch):
-    error = pywintypes.error(1400, "GetWindowRect", "Invalid window handle")
+    error = pywintypes.error(1400, "GetClientRect", "Invalid window handle")
     monkeypatch.setattr(capture.mss, "MSS", FakeScreen)
     monkeypatch.setattr(capture.win32gui, "FindWindow", lambda _class, _title: 42)
     monkeypatch.setattr(capture.win32gui, "IsIconic", lambda _handle: False)
@@ -153,7 +193,7 @@ def test_window_capture_converts_window_api_race(monkeypatch):
     def missing_window(_handle):
         raise error
 
-    monkeypatch.setattr(capture.win32gui, "GetWindowRect", missing_window)
+    monkeypatch.setattr(capture.win32gui, "GetClientRect", missing_window)
 
     with pytest.raises(WindowUnavailable) as caught:
         WindowCapture("微信").capture()

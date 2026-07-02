@@ -1,11 +1,11 @@
 {
   "window_title": "多乐贵阳捉鸡麻将",
   "hand": {
-    "x": 384,
-    "y": 450,
-    "slot_width": 62,
-    "slot_height": 86,
-    "stride": 62,
+    "x": 7,
+    "y": 576,
+    "slot_width": 74,
+    "slot_height": 103,
+    "stride": 78,
     "count": 14
   },
   "matching": {

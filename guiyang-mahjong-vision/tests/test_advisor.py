@@ -50,6 +50,48 @@ def test_chicken_weight_does_not_preserve_tile_at_cost_of_shanten():
     assert result.discard == "1s"
 
 
-def test_fourteen_tiles_are_required():
-    with pytest.raises(ValueError, match="14"):
-        advise(("1m",), AdvisorWeights(2.0, 2.5, 0.4))
+def test_thirteen_tile_hand_still_gets_a_draw_based_suggestion():
+    hand = (
+        "4m",
+        "5m",
+        "6m",
+        "4s",
+        "5s",
+        "6s",
+        "7s",
+        "8s",
+        "2p",
+        "4p",
+        "6p",
+        "8p",
+        "8p",
+    )
+
+    result = advise(hand, AdvisorWeights(2.0, 2.5, 0.4))
+
+    assert result.discard
+    assert result.alternatives
+    assert "摸" in result.reason
+
+
+def test_eight_concealed_tiles_after_two_melds_gets_discard_advice():
+    hand = (
+        "6m",
+        "6m",
+        "7m",
+        "8m",
+        "1p",
+        "3p",
+        "3p",
+        "1s",
+    )
+
+    result = advise(hand, AdvisorWeights(2.0, 2.5, 0.4))
+
+    assert result.discard in hand
+    assert "副露2组" in result.reason
+
+
+def test_impossible_concealed_tile_counts_are_rejected():
+    with pytest.raises(ValueError, match="legal concealed hand size"):
+        advise(("1m", "2m", "3m"), AdvisorWeights(2.0, 2.5, 0.4))

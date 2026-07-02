@@ -28,7 +28,7 @@ class Advice:
     alternatives: tuple[Alternative, ...]
 
 
-def _standard_shanten(counts: list[int]) -> int:
+def _standard_shanten(counts: list[int], fixed_melds: int = 0) -> int:
     best = 8
 
     def walk(index: int, melds: int, pairs: int, taatsu: int) -> None:
@@ -77,7 +77,7 @@ def _standard_shanten(counts: list[int]) -> int:
             counts[index] += 1
             counts[index + 2] += 1
 
-    walk(0, 0, 0, 0)
+    walk(0, fixed_melds, 0, 0)
     return best
 
 
@@ -87,17 +87,24 @@ def _seven_pairs_shanten(counts: list[int]) -> int:
     return 6 - pair_types + max(0, 7 - distinct)
 
 
-def _shanten(counts: list[int]) -> int:
-    return min(_standard_shanten(counts.copy()), _seven_pairs_shanten(counts))
+def _shanten(counts: list[int], fixed_melds: int = 0) -> int:
+    standard = _standard_shanten(counts.copy(), fixed_melds)
+    if fixed_melds:
+        return standard
+    return min(standard, _seven_pairs_shanten(counts))
 
 
-def _effective_draws(counts: list[int], base_shanten: int) -> int:
+def _effective_draws(
+    counts: list[int],
+    base_shanten: int,
+    fixed_melds: int,
+) -> int:
     total = 0
     for draw_index, count in enumerate(counts):
         if count >= 4:
             continue
         counts[draw_index] += 1
-        if _shanten(counts) < base_shanten:
+        if _shanten(counts, fixed_melds) < base_shanten:
             total += 4 - count
         counts[draw_index] -= 1
     return total
@@ -128,17 +135,11 @@ def _discard_structure_cost(tile_index: int, counts: list[int]) -> int:
     return 1 if connected else 0
 
 
-def advise(labels: tuple[str, ...], weights: AdvisorWeights) -> Advice:
-    if len(labels) != 14:
-        raise ValueError("advisor requires exactly 14 tiles")
-
-    counts = [0] * 27
-    for label in labels:
-        tile = Tile.from_label(label)
-        counts[tile.index] += 1
-        if counts[tile.index] > 4:
-            raise ValueError(f"too many copies of {label}")
-
+def _rank_discards(
+    counts: list[int],
+    weights: AdvisorWeights,
+    fixed_melds: int,
+) -> tuple[Alternative, ...]:
     alternatives: list[Alternative] = []
     original_counts = counts.copy()
     for tile_index, original_count in enumerate(counts):
@@ -146,8 +147,8 @@ def advise(labels: tuple[str, ...], weights: AdvisorWeights) -> Advice:
             continue
         tile = Tile(tile_index)
         counts[tile_index] -= 1
-        shanten_after = _shanten(counts)
-        effective_tiles = _effective_draws(counts, shanten_after)
+        shanten_after = _shanten(counts, fixed_melds)
+        effective_tiles = _effective_draws(counts, shanten_after, fixed_melds)
         counts[tile_index] += 1
         alternatives.append(
             Alternative(
@@ -170,15 +171,84 @@ def advise(labels: tuple[str, ...], weights: AdvisorWeights) -> Advice:
             Tile.from_label(alternative.discard).index,
         )
     )
+    return tuple(alternatives)
+
+
+def _counts(labels: tuple[str, ...]) -> list[int]:
+    counts = [0] * 27
+    for label in labels:
+        tile = Tile.from_label(label)
+        counts[tile.index] += 1
+        if counts[tile.index] > 4:
+            raise ValueError(f"too many copies of {label}")
+    return counts
+
+
+def _hand_shape(tile_count: int) -> tuple[int, bool]:
+    before_draw = {13: 0, 10: 1, 7: 2, 4: 3, 1: 4}
+    after_draw = {14: 0, 11: 1, 8: 2, 5: 3, 2: 4}
+    if tile_count in before_draw:
+        return before_draw[tile_count], False
+    if tile_count in after_draw:
+        return after_draw[tile_count], True
+    raise ValueError("advisor requires a legal concealed hand size")
+
+
+def advise(labels: tuple[str, ...], weights: AdvisorWeights) -> Advice:
+    fixed_melds, after_draw = _hand_shape(len(labels))
+
+    counts = _counts(labels)
+
+    if not after_draw:
+        best_draw: Tile | None = None
+        best_alternative: Alternative | None = None
+        best_alternatives: tuple[Alternative, ...] = ()
+        best_key: tuple[int, int, float, int] | None = None
+        for draw_index, count in enumerate(counts):
+            if count >= 4:
+                continue
+            counts[draw_index] += 1
+            alternatives = _rank_discards(counts, weights, fixed_melds)
+            counts[draw_index] -= 1
+            candidate = alternatives[0]
+            key = (
+                candidate.shanten_after,
+                -candidate.effective_tiles,
+                candidate.keep_value,
+                draw_index,
+            )
+            if best_key is None or key < best_key:
+                best_key = key
+                best_draw = Tile(draw_index)
+                best_alternative = candidate
+                best_alternatives = alternatives
+        if best_draw is None or best_alternative is None:
+            raise ValueError("no drawable tiles remain")
+        discard_name = Tile.from_label(best_alternative.discard).display_name
+        meld_text = f"副露{fixed_melds}组，" if fixed_melds else ""
+        reason = (
+            f"{meld_text}若摸{best_draw.display_name}，打{discard_name}："
+            f"向听数{best_alternative.shanten_after}，"
+            f"有效进张{best_alternative.effective_tiles}张"
+        )
+        return Advice(
+            discard=best_alternative.discard,
+            reason=reason,
+            shanten_after=best_alternative.shanten_after,
+            alternatives=best_alternatives,
+        )
+
+    alternatives = _rank_discards(counts, weights, fixed_melds)
     best = alternatives[0]
     display_name = Tile.from_label(best.discard).display_name
+    meld_text = f"副露{fixed_melds}组，" if fixed_melds else ""
     reason = (
-        f"打{display_name}："
+        f"{meld_text}打{display_name}："
         f"向听数{best.shanten_after}，有效进张{best.effective_tiles}张"
     )
     return Advice(
         discard=best.discard,
         reason=reason,
         shanten_after=best.shanten_after,
-        alternatives=tuple(alternatives),
+        alternatives=alternatives,
     )
