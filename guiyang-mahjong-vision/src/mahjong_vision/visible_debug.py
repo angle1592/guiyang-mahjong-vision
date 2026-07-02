@@ -12,6 +12,14 @@ from mahjong_vision.templates import MatchResult
 from mahjong_vision.visible_recognizer import Matcher, crop_region_slots
 
 
+_GENERATED_FILE_NAMES = ("frame.png", "visible-report.json")
+_GENERATED_SLOT_PATTERNS = (
+    "discards_*_slot_*.png",
+    "melds_*_slot_*.png",
+    "revealed_*_slot_*.png",
+)
+
+
 @dataclass(frozen=True)
 class VisibleDebugEntry:
     region: int
@@ -21,6 +29,19 @@ class VisibleDebugEntry:
     accepted: bool
     score: float
     runner_up_score: float
+
+
+def _safe_unlink(path: Path) -> None:
+    if path.is_file() or path.is_symlink():
+        path.unlink()
+
+
+def _clean_generated_outputs(output_dir: Path) -> None:
+    for name in _GENERATED_FILE_NAMES:
+        _safe_unlink(output_dir / name)
+    for pattern in _GENERATED_SLOT_PATTERNS:
+        for path in output_dir.glob(pattern):
+            _safe_unlink(path)
 
 
 def _write_image(path: Path, image: np.ndarray) -> None:
@@ -80,6 +101,7 @@ def write_visible_debug_capture(
 ) -> Path:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
+    _clean_generated_outputs(output)
 
     frame_name = "frame.png"
     _write_image(output / frame_name, frame)
