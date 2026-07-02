@@ -163,10 +163,15 @@ def _visible_region_array(
     key: str,
     section: str,
 ) -> tuple[VisibleRegionConfig, ...]:
-    return tuple(
+    regions = tuple(
         _visible_region(region, f"{section}.{key}[{index}]")
         for index, region in enumerate(_optional_array(data, key, section))
     )
+    if key == "melds":
+        for index, region in enumerate(regions):
+            if region.count not in (3, 4):
+                raise ValueError(f"{section}.{key}[{index}].count must be 3 or 4")
+    return regions
 
 
 def _visible_regions(raw: dict[str, object]) -> VisibleRegionsConfig:
