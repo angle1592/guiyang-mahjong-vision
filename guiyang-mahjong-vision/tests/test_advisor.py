@@ -50,6 +50,55 @@ def test_chicken_weight_does_not_preserve_tile_at_cost_of_shanten():
     assert result.discard == "1s"
 
 
+def test_visible_counts_are_removed_from_effective_draws():
+    hand = (
+        "1m",
+        "2m",
+        "3m",
+        "4m",
+        "5m",
+        "6m",
+        "2p",
+        "3p",
+        "4p",
+        "6p",
+        "7p",
+        "8p",
+        "1s",
+        "9s",
+    )
+
+    result = advise(hand, AdvisorWeights(2.0, 2.5, 0.4), {"1s": 3})
+    dead_wait = next(
+        alternative for alternative in result.alternatives if alternative.discard == "9s"
+    )
+
+    assert result.discard == "1s"
+    assert dead_wait.effective_tiles == 0
+
+
+def test_visible_counts_reject_impossible_known_tile_totals():
+    hand = (
+        "1m",
+        "2m",
+        "3m",
+        "4m",
+        "5m",
+        "6m",
+        "2p",
+        "3p",
+        "4p",
+        "6p",
+        "7p",
+        "8p",
+        "1s",
+        "9s",
+    )
+
+    with pytest.raises(ValueError, match="too many known copies of 1s"):
+        advise(hand, AdvisorWeights(2.0, 2.5, 0.4), {"1s": 4})
+
+
 def test_thirteen_tile_hand_still_gets_a_draw_based_suggestion():
     hand = (
         "4m",
