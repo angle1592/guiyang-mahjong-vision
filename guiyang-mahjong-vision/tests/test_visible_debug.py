@@ -128,3 +128,45 @@ def test_debug_capture_uses_stable_region_and_slot_names(tmp_path):
         "discards_1_slot_00.png",
         "discards_1_slot_01.png",
     ]
+
+
+def test_debug_capture_cleans_stale_generated_outputs_without_touching_user_files(
+    tmp_path,
+):
+    frame = np.zeros((20, 40, 3), dtype=np.uint8)
+    first_regions = VisibleRegionsConfig(
+        discards=(region(count=3),),
+        melds=(),
+        revealed=(),
+    )
+    second_regions = VisibleRegionsConfig(
+        discards=(region(count=1),),
+        melds=(),
+        revealed=(),
+    )
+
+    write_visible_debug_capture(
+        frame=frame,
+        regions=first_regions,
+        store=FakeStore([accepted("1m"), accepted("2m"), accepted("3m")]),
+        output_dir=tmp_path,
+    )
+    (tmp_path / "notes.txt").write_text("keep", encoding="utf-8")
+    (tmp_path / "custom_slot_99.png").write_bytes(b"keep")
+
+    write_visible_debug_capture(
+        frame=frame,
+        regions=second_regions,
+        store=FakeStore([accepted("4m")]),
+        output_dir=tmp_path,
+    )
+    report = read_report(tmp_path / "visible-report.json")
+
+    assert (tmp_path / "discards_0_slot_00.png").exists()
+    assert not (tmp_path / "discards_0_slot_01.png").exists()
+    assert not (tmp_path / "discards_0_slot_02.png").exists()
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "keep"
+    assert (tmp_path / "custom_slot_99.png").read_bytes() == b"keep"
+    assert [entry["image"] for entry in report["discards"]] == [
+        "discards_0_slot_00.png"
+    ]
