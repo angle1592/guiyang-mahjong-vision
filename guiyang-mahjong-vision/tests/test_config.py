@@ -171,8 +171,7 @@ def test_load_config_rejects_invalid_values(
     ],
 )
 def test_load_config_rejects_invalid_json_shape(
-    tmp_path: Path, raw_config: Any
-) -> None:
+    tmp_path: Path, raw_config: Any) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(raw_config), encoding="utf-8")
 
