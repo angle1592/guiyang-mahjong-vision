@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from queue import Queue
+import sys
 from threading import Event, Thread
 from time import perf_counter, sleep
 
@@ -27,6 +28,12 @@ def _plain_recommendation(reason: str, discard: str) -> str:
 _BEFORE_DRAW_COUNTS = {1, 4, 7, 10, 13}
 _AFTER_DRAW_COUNTS = {2, 5, 8, 11, 14}
 _LEGAL_LIVE_COUNTS = _BEFORE_DRAW_COUNTS | _AFTER_DRAW_COUNTS
+
+
+def _runtime_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
 
 
 def _display_hand(labels: tuple[str, ...]) -> str:
@@ -154,7 +161,7 @@ def worker(
 
 
 def main() -> None:
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = _runtime_root()
     config_path = project_root / "config.json"
     config = load_config(config_path)
     store = TemplateStore(

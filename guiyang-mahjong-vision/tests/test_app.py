@@ -1,5 +1,26 @@
+from pathlib import Path
+import sys
+
+from mahjong_vision import app
 from mahjong_vision.advisor import AdvisorWeights
 from mahjong_vision.app import _state_for_live_recognition
+
+
+def test_runtime_root_uses_project_root_when_not_frozen(monkeypatch):
+    monkeypatch.delattr(sys, "frozen", raising=False)
+
+    assert app._runtime_root() == Path(app.__file__).resolve().parents[2]
+
+
+def test_runtime_root_uses_executable_directory_when_frozen(
+    monkeypatch,
+    tmp_path,
+):
+    executable = tmp_path / "贵阳麻将识牌助手.exe"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(executable))
+
+    assert app._runtime_root() == tmp_path
 
 
 def test_legal_slot_count_with_unknowns_does_not_claim_illegal_hand():
